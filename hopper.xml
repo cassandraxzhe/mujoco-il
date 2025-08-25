@@ -6,7 +6,8 @@
     <default>
         <geom type="box" rgba="0.8 0.4 0.4 1"/>
         <joint damping="0.01"/>
-        <motor ctrlrange="-1 1"/>
+        <motor ctrllimited="true" ctrlrange="0 0.0035"/> <!-- per-wing max thrust -->
+
     </default>
     <worldbody>
         <light name="top" pos="0 0 1"/>
@@ -16,7 +17,16 @@
             <freejoint/>
             <inertial pos="0 0 0" mass="0.00095" diaginertia="6.0e-08 6.0e-08 7.5e-08"/>
 
+            <!-- sites for wing thrusters (corners of torso box, z=0 at bottom face) -->
+            <site name="wing1" pos="0.015 0.015 0" size="0.001" rgba="1 0 0 1"/>
+            <site name="wing2" pos="0.015 -0.015 0" size="0.001" rgba="0 1 0 1"/>
+            <site name="wing3" pos="-0.015 0.015 0" size="0.001" rgba="0 0 1 1"/>
+            <site name="wing4" pos="-0.015 -0.015 0" size="0.001" rgba="1 1 0 1"/>
+
+            <!-- hopper torso approximated as a 10 x 30 x 30 mm^3 box of mass 0.95g -->
             <geom name="hopper-torso" type="box" size="0.015 0.015 0.005" mass="0.00095"/>
+
+            <!-- hopper leg with spring k=70 N/m -->
             <body name="hopper-leg" pos="0 0 -0.03">
                 <joint name="hopper-slide" type="slide" axis="0 0 1" pos="0 0 0" damping="0.01" stiffness="70" springref="0"/>
                 <geom name="leg" type="capsule" fromto="0 0 0 0 0 -0.03" size="0.002" mass="0.00003"/>
@@ -25,7 +35,14 @@
     </worldbody>
 
     <actuator> 
-        <motor name="thrust" joint="hopper-slide" gear="0 0 1 0 0 0" ctrlrange="0 0.0145"/>
+        <!-- spring actuator for leg -->
+        <motor name="leg-motor" joint="hopper-slide" gear="1.0" ctrlrange="0 1"/>
+
+        <!-- wing actuators -->
+        <general name="f1" site="wing1" dyntype="none" biastype="affine" gainprm="0 0 1 0 0 0" biasprm="0 0 0" ctrllimited="true" ctrlrange="0 2.0e-5"/>
+        <general name="f2" site="wing2" dyntype="none" biastype="affine" gainprm="0 0 1 0 0 0" biasprm="0 0 0" ctrllimited="true" ctrlrange="0 2.0e-5"/>
+        <general name="f3" site="wing3" dyntype="none" biastype="affine" gainprm="0 0 1 0 0 0" biasprm="0 0 0" ctrllimited="true" ctrlrange="0 2.0e-5"/>
+        <general name="f4" site="wing4" dyntype="none" biastype="affine" gainprm="0 0 1 0 0 0" biasprm="0 0 0" ctrllimited="true" ctrlrange="0 2.0e-5"/>
     </actuator>
 
     <!-- <equality> -->
