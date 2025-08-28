@@ -10,6 +10,7 @@
 
     </default>
     <worldbody>
+        <camera name="camera-1" pos="0 0 5"/>
         <light name="top" pos="0 0 1"/>
         <geom name="floor" type="plane" size="1 1 0.1" rgba="0.2 0.3 0.4 1"/>
 
