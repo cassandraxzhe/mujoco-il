@@ -1,0 +1,58 @@
+<mujoco model='Flying_Hopper'>
+	<compiler autolimits="true" />
+	<visual>
+		<headlight ambient="0.5 0.5 0.5" />
+	</visual>
+
+	<default>
+		<motor ctrllimited="true" ctrlrange="0 0.005" forcerange="0 0.005" />
+	</default>
+
+	<option timestep="1e-4" integrator="RK4" cone='elliptic'>
+		<flag energy="enable" />
+	</option>
+	<asset>
+		<texture name="texplane" type="2d" builtin="checker" rgb1=".25 .25 .25" rgb2=".3 .3 .3"
+			width="512" height="512" mark="cross" markrgb=".8 .8 .8" />
+
+		<material name="matplane" reflectance="0.3" texture="texplane" texrepeat="1 1"
+			texuniform="true" />
+	</asset>
+	<worldbody>
+		<geom name="floor" pos="0 0 0" size="0 0 1" type="plane" material="matplane" condim="1" />
+
+		<light directional="true" diffuse=".8 .8 .8" specular=".2 .2 .2" pos="0 0 5" dir="0 0 -1" />
+
+		<body name="main" pos="0 0 .5">
+			<freejoint />
+			<geom type="box" size="25e-3 25e-3 10e-3" rgba=".9 .9 .9 1" />
+			<inertial pos="0 0 0" mass="0.71875e-3" diaginertia="0.6e-7 0.6e-7 0.75e-7" />
+
+			<site name="thrust1" pos="12.5e-3 12.5e-3 5e-3" />
+			<site name="thrust2" pos="12.5e-3 -12.5e-3 5e-3" />
+			<site name="thrust3" pos="-12.5e-3 12.5e-3 5e-3" />
+			<site name="thrust4" pos="-12.5e-3 -12.5e-3 5e-3" />
+
+			<body name="spring" pos="0 0 0">
+				<joint name="hopper_z" type="slide" pos="0 0 0" axis="0 0 1" stiffness='70'
+					damping='0' range="-1 0" />
+				<geom type="capsule" size=".01" fromto="0 0 -5e-3  0 0 -.08" rgba=".5 .1 .1 1" solref="-2000 -0.01" solimp="0.9 0.9 0.01" />
+				<inertial pos="0 0 -0.0425" mass="0.2e-3" diaginertia="1.36e-8 1.36e-8 0.5e-9" />
+				<site name="foot_site" type="sphere" size=".01" pos="0 0 -0.08" rgba=".1 .1 .9 1" />
+			</body>
+		</body>
+	</worldbody>
+
+	<sensor>
+		<touch name="peak_contact_sensor" site="foot_site" />
+	</sensor>
+
+	<actuator>
+		<motor name="thrust1" site="thrust1" gear="0 0 1 0 0 0" />
+		<motor name="thrust2" site="thrust2" gear="0 0 1 0 0 0" />
+		<motor name="thrust3" site="thrust3" gear="0 0 1 0 0 0" />
+		<motor name="thrust4" site="thrust4" gear="0 0 1 0 0 0" />
+	</actuator>
+
+
+</mujoco>

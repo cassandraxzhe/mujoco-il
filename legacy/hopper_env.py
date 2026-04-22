@@ -63,25 +63,59 @@ class HopperEnv:
 
         return obs, reward, done, info
     
-    def simulate_and_render(self, action_func, iters=10000):
+    def simulate_and_render(self, model, sim_time=5.0): #, iters=10000):
 
-        self.frames = []
+        # self.frames = []
 
-        scene_option = mujoco.MjvOption()
-        scene_option.flags[mujoco.mjtVisFlag.mjVIS_JOINT] = True
+        # scene_option = mujoco.MjvOption()
+        # scene_option.flags[mujoco.mjtVisFlag.mjVIS_JOINT] = True
 
-        for _ in range(iters):
-            action = np.random.uniform(-1, 1, size=self.action_dim)  # random actions TODO: uh change this later?
-            obs, reward, done, info = self.step(action)
-            # print("Impulse so far:", env._impulse_accumulator)
-            if len(self.frames) < self.data.time * self.framerate:
-                # print("adding another frame")
-                self.renderer.update_scene(self.data, scene_option=scene_option)
-                pixels = self.renderer.render()
-                self.frames.append(pixels)
+        # for _ in range(iters):
+        #     action = np.random.uniform(-1, 1, size=self.action_dim)  # random actions TODO: uh change this later?
+        #     obs, reward, done, info = self.step(action)
+        #     # print("Impulse so far:", env._impulse_accumulator)
+        #     if len(self.frames) < self.data.time * self.framerate:
+        #         # print("adding another frame")
+        #         self.renderer.update_scene(self.data, scene_option=scene_option)
+        #         pixels = self.renderer.render()
+        #         self.frames.append(pixels)
 
-        print(len(self.frames))
-        media.show_video(self.frames, fps=self.framerate)
+        # print(len(self.frames))
+        # media.show_video(self.frames, fps=self.framerate)
+
+        """
+        Run the hopper simulation with MPC + learned dynamics and render it.
+        
+        Args:
+            env: MuJoCo environment (must have env.physics)
+            model: trained dynamics model
+            sim_time: total simulation time in seconds
+        """
+        t = 0.0
+        viewer = mujoco.viewer.launch_passive(self.physics)  # opens interactive window
+        while t < sim_time:
+            # Get current hopper state
+            pos, eul = mj_get_state(self)
+
+            # Compute MPC control
+            u = cem_optimize(model, pos, eul)   # or use mpc_control_step(env, model)
+            mj_apply_u(self, u)
+
+            # Step physics
+            substeps = max(1, int(DT / env.physics.model.opt.timestep + 1e-9))
+            for _ in range(substeps):
+                env.step()
+
+            # Render
+            viewer.render()
+
+            # Optional: slow down for real-time visualization
+            time.sleep(DT)
+
+            # Advance simulation time
+            t += DT
+
+        viewer.close()
 
     def _get_obs(self):
         # # Example: positions + velocities

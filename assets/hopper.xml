@@ -1,7 +1,7 @@
-
 <mujoco model="hopper">
     <compiler angle="degree" coordinate="local"/>
-    <option gravity="0 0 -9.81" timestep="0.0001" integrator="RK4"/>
+    <option gravity="0 0 -9.81" timestep="0.0001" integrator="RK4" cone="elliptic"/> <!-- friction cone-->
+    <!--o_-->
 
     <default>
         <geom type="box" rgba="0.8 0.4 0.4 1"/>
@@ -39,12 +39,12 @@
                     springref="0" damping="0.01" frictionloss="0"/> -->
                 <joint name="hopper-slide" type="slide" axis="0 0 1"
                     range="-0.03 0.0" springref="0" damping="0.01"/>
-
+                <!--solref-->
                 <!-- <geom name="leg" type="capsule" fromto="0 0 0 0 0 -0.03"
                       size="0.002" mass="0.00003" friction="1.0 0.1 0.01"/> -->
                 <geom name="leg" type="capsule" fromto="0 0 0 0 0 -0.03"
-                    size="0.002" mass="0.00003" friction="1.0 0.1 0.01"
-                    contype="1" conaffinity="1"/>
+                    size="0.002" mass="0.00003"
+                    contype="1" conaffinity="1" solref="-2000 -0.01" solimp="0.9 0.9 0.01"/>
             </body>
         </body>
     </worldbody>
