@@ -271,7 +271,8 @@ def mpc_cost(traj_pos, traj_eul, traj_u, traj_omega=None,
 
 def cem_optimize(model, pos0, eul0, z_des=Z_DES, device='cpu',
                  h=H, pop=POP, elites=ELITES, iters=ITERS,
-                 fmax=FMAX_WING, ctrl_dim=CTRL_DIM, verbose=False):
+                 fmax=FMAX_WING, ctrl_dim=CTRL_DIM, verbose=False,
+                 prior_mean=None, prior_std=None, return_dist=False):
     """
     CEM optimization over a horizon of control sequences.
 
@@ -284,27 +285,39 @@ def cem_optimize(model, pos0, eul0, z_des=Z_DES, device='cpu',
     your task, pass traj_omega from the simulator directly via mpc_step().
 
     Args:
-        model:    Trained PyTorch dynamics model
-        pos0:     [3] initial position
-        eul0:     [3] initial euler angles
-        z_des:    desired height (m)
-        device:   torch device string
-        h:        horizon length (steps)
-        pop:      CEM population size
-        elites:   number of elite samples kept each iteration
-        iters:    number of CEM refinement iterations
-        fmax:     maximum per-wing force (N)
-        ctrl_dim: control dimension (always 4)
-        verbose:  print per-iteration debug info
+        model:      Trained PyTorch dynamics model
+        pos0:       [3] initial position
+        eul0:       [3] initial euler angles
+        z_des:      desired height (m)
+        device:     torch device string
+        h:          horizon length (steps)
+        pop:        CEM population size
+        elites:     number of elite samples kept each iteration
+        iters:      number of CEM refinement iterations
+        fmax:       maximum per-wing force (N)
+        ctrl_dim:   control dimension (always 4)
+        verbose:    print per-iteration debug info
+        prior_mean: [h, ctrl_dim] optional warm-start mean (from previous MPC
+                    step, shifted by one). Enables continuity across steps.
+        prior_std:  [h, ctrl_dim] optional warm-start std.
+        return_dist: if True, also return the final mean/std for warm-starting.
 
     Returns:
-        u0: [4] best first control action
+        u0: [4] best first control action.
+        If return_dist is True: (u0, mean, std) where mean/std are [h, ctrl_dim].
     """
     model.eval()
 
-    # Initialise distribution — mean at quarter-hover, std at 25% of fmax
-    mean = np.full((h, ctrl_dim), fmax * 0.25, dtype=np.float32)
-    std  = np.full((h, ctrl_dim), fmax * 0.25, dtype=np.float32)
+    # Warm-start when available; otherwise hover-centered init.
+    # Starting at quarter-hover traps CEM in a sub-hover local optimum;
+    # std wide enough to span both sides of hover without the [0, fmax]
+    # clip biasing the effective mean upward.
+    if prior_mean is not None and prior_std is not None:
+        mean = prior_mean.astype(np.float32)
+        std = prior_std.astype(np.float32)
+    else:
+        mean = np.full((h, ctrl_dim), fmax * 0.8, dtype=np.float32)
+        std  = np.full((h, ctrl_dim), fmax * 0.5, dtype=np.float32)
 
     best_u_seq = None
     best_cost  = np.inf
@@ -362,6 +375,8 @@ def cem_optimize(model, pos0, eul0, z_des=Z_DES, device='cpu',
                   f"mean_f0={mean_f:.3f} mN")
 
     # Receding-horizon: return only the first action
+    if return_dist:
+        return best_u_seq[0], mean, std
     return best_u_seq[0]
 
 
