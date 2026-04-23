@@ -1,0 +1,169 @@
+<mujoco model="hopper">
+    <compiler angle="degree" coordinate="local" autolimits="true"/>
+    <option gravity="0 0 -9.81" timestep="0.0001" integrator="RK4" cone="elliptic"/> <!-- friction cone-->
+    <!--o_-->
+
+    <default>
+        <geom type="box" rgba="0.8 0.4 0.4 1"/>
+        <motor ctrllimited="true" ctrlrange="0 0.0035"/>
+    </default>
+
+    <worldbody>
+        <camera name="camera-1" pos="0 0 1"/>
+        <camera name="track" mode="trackcom" pos="0 -0.1 0.3"/>
+
+        <light name="top" pos="0 0 1"/>
+        <geom name="floor" type="plane" size="1 1 0.1" rgba="0.2 0.3 0.4 1"/>
+
+        <body name="hopper" pos="0 0 0.035">  <!-- 3.5 cm, foot ~0.5 cm above z=0 -->
+            <freejoint/>
+            <inertial pos="0 0 0" mass="0.00095" diaginertia="6.0e-08 6.0e-08 7.5e-08"/>
+
+            <!-- sites for wing thrusters -->
+            <site name="wing1" pos="0.015 0.015 0" size="0.001" rgba="1 0 0 1"/>
+            <site name="wing2" pos="0.015 -0.015 0" size="0.001" rgba="0 1 0 1"/>
+            <site name="wing3" pos="-0.015 0.015 0" size="0.001" rgba="0 0 1 1"/>
+            <site name="wing4" pos="-0.015 -0.015 0" size="0.001" rgba="1 1 0 1"/>
+
+            <!-- torso -->
+            <!-- <geom name="hopper-torso" type="box" size="0.015 0.015 0.005"
+                  mass="0.00095" friction="0.8 0.1 0.01"/> -->
+            <geom name="hopper-torso" type="box" size="0.015 0.015 0.005"
+                mass="0.00095" friction="0.8 0.1 0.01"
+                contype="1" conaffinity="1"/>
+
+            <!-- leg -->
+            <body name="hopper-leg" pos="0 0 -0.03">
+                <!-- <joint name="hopper-slide" type="slide" axis="0 0 1" damping="0.01"/> -->
+                <!-- <joint name="hopper-slide" type="slide" axis="0 0 1"
+                    springref="0" damping="0.01" frictionloss="0"/> -->
+                <joint name="hopper-slide" type="slide" axis="0 0 1"
+                    range="-0.03 0.0" springref="0" damping="0.01"
+                    solreflimit="0.001 1"
+                    solimplimit="0.99 0.999 0.0001 0.5 2"/>
+                <!--solref-->
+                <!-- <geom name="leg" type="capsule" fromto="0 0 0 0 0 -0.03"
+                      size="0.002" mass="0.00003" friction="1.0 0.1 0.01"/> -->
+                <geom name="leg" type="capsule" fromto="0 0 0 0 0 -0.03"
+                    size="0.002" mass="0.00003"
+                    contype="1" conaffinity="1" solref="-2000 -8.0" solimp="0.9 0.9 0.01"/>
+            </body>
+        </body>
+        <!-- stair inserted by make_stair_xml(height=0.008, depth=0.02, width=0.1, x_offset=0.05) -->
+    <body name="stair" pos="0.060000 0 0.004000">
+      <geom name="stair_geom" type="box"
+            size="0.010000 0.050000 0.004000"
+            rgba="0.5 0.5 0.6 1"
+            contype="1" conaffinity="1"
+            solref="-2000 -0.01" solimp="0.9 0.9 0.01"/>
+    </body>
+</worldbody>
+
+    <actuator>
+        <!-- Springy leg actuator -->
+        <!-- <general name="leg-spring" joint="hopper-slide"
+                gainprm="70" biastype="affine" biasprm="0 0 0 0 0 0"
+                ctrllimited="false"/> -->
+        
+        <!-- <general name="leg-spring" joint="hopper-slide"
+         gainprm="0 0 0 0 0 0 70"   
+         biastype="affine"
+         biasprm="0 0 0 0 0 0"      
+         ctrllimited="false"/> -->
+        <motor name="leg-motor" joint="hopper-slide" gear="1.0" ctrlrange="0 1"/>
+
+        <!-- Wings -->
+        <general name="f1" site="wing1" gear="0 0 1" forcerange="0 0.003"
+                ctrllimited="true" ctrlrange="0 0.003"/>
+        <general name="f2" site="wing2" gear="0 0 1" forcerange="0 0.003"
+                ctrllimited="true" ctrlrange="0 0.003"/>
+        <general name="f3" site="wing3" gear="0 0 1" forcerange="0 0.003"
+                ctrllimited="true" ctrlrange="0 0.003"/>
+        <general name="f4" site="wing4" gear="0 0 1" forcerange="0 0.003"
+                ctrllimited="true" ctrlrange="0 0.003"/>
+    </actuator>
+</mujoco>
+
+<!-- <mujoco model="hopper">
+    <compiler angle="degree" coordinate="local"/>
+    <!-- <option timestep="0.001"/> -->
+    <option gravity="0 0 -9.81" timestep="0.0001" integrator="RK4"/>
+
+    <default>
+        <geom type="box" rgba="0.8 0.4 0.4 1"/>
+        <!-- <joint damping="0.0"/> -->
+        <motor ctrllimited="true" ctrlrange="0 0.0035"/> <!-- per-wing max thrust -->
+
+    </default>
+    <worldbody>
+        <camera name="camera-1" pos="0 0 5"/>
+        <camera name="track" mode="trackcom" pos="0 -0.1 0.3"/>
+
+        <light name="top" pos="0 0 1"/>
+        <geom name="floor" type="plane" size="1 1 0.1" rgba="0.2 0.3 0.4 1"/>
+
+        <body name="hopper" pos="0 0 0.20">
+            <freejoint/>
+            <inertial pos="0 0 0" mass="0.00095" diaginertia="6.0e-08 6.0e-08 7.5e-08"/>
+
+            <!-- sites for wing thrusters (corners of torso box, z=0 at bottom face) -->
+            <site name="wing1" pos="0.015 0.015 0" size="0.001" rgba="1 0 0 1"/>
+            <site name="wing2" pos="0.015 -0.015 0" size="0.001" rgba="0 1 0 1"/>
+            <site name="wing3" pos="-0.015 0.015 0" size="0.001" rgba="0 0 1 1"/>
+            <site name="wing4" pos="-0.015 -0.015 0" size="0.001" rgba="1 1 0 1"/>
+
+            <!-- hopper torso approximated as a 10 x 30 x 30 mm^3 box of mass 0.95g -->
+            <geom name="hopper-torso" type="box" size="0.015 0.015 0.005" mass="0.00095" friction="0 0 0"/>
+
+            <!-- hopper leg with spring k=70 N/m -->
+            <body name="hopper-leg" pos="0 0 -0.03">
+                <!-- constrain lateral x & y to fixed -->
+                <!-- <joint name="leg-x" type="slide" axis="1 0 0" stiffness="1000" damping="10"/>
+                <joint name="leg-y" type="slide" axis="0 1 0" stiffness="1000" damping="10"/> -->
+
+                <!-- <joint name="hopper-slide" type="slide" axis="0 0 1" pos="0 0 0" damping="0.1" stiffness="70" springref="0" frictionloss="0.0"/> -->
+                <joint name="hopper-slide" type="slide" axis="0 0 1" damping="0.1"/>
+                <geom name="leg" type="capsule" fromto="0 0 0 0 0 -0.03" size="0.002" mass="0.00003" friction="0 0 0"/>
+            </body>
+        </body>
+    </worldbody>
+
+    <actuator> 
+        <!-- spring actuator for leg -->
+        <!-- <motor name="leg-motor" joint="hopper-slide" gear="1.0" ctrlrange="0 1"/> -->
+        <motor name="leg-motor" joint="hopper-slide"
+        gear="1.0" ctrlrange="0 5"/>   <!-- or whatever force you measured -->
+        <motor name="leg-spring" joint="hopper-slide"
+           biastype="spring" gainprm="70" biasprm="0"/>
+
+
+        <!-- wing actuators -->
+        <!-- <general name="f1" site="wing1" dyntype="none" biastype="affine" gainprm="0 0 1 0 0 0" biasprm="0 0 0" ctrllimited="true" ctrlrange="0 2.0e-5"/>
+        <general name="f2" site="wing2" dyntype="none" biastype="affine" gainprm="0 0 1 0 0 0" biasprm="0 0 0" ctrllimited="true" ctrlrange="0 2.0e-5"/>
+        <general name="f3" site="wing3" dyntype="none" biastype="affine" gainprm="0 0 1 0 0 0" biasprm="0 0 0" ctrllimited="true" ctrlrange="0 2.0e-5"/>
+        <general name="f4" site="wing4" dyntype="none" biastype="affine" gainprm="0 0 1 0 0 0" biasprm="0 0 0" ctrllimited="true" ctrlrange="0 2.0e-5"/> -->
+        <general name="f1" site="wing1"
+         gear="0 0 1"
+         forcerange="0 2e-5"
+         ctrllimited="true" ctrlrange="0 2e-5"/>
+
+        <general name="f2" site="wing2"
+         gear="0 0 1"
+         forcerange="0 2e-5"
+         ctrllimited="true" ctrlrange="0 2e-5"/>
+
+        <general name="f3" site="wing3"
+         gear="0 0 1"
+         forcerange="0 2e-5"
+         ctrllimited="true" ctrlrange="0 2e-5"/>
+
+        <general name="f4" site="wing4"
+         gear="0 0 1"
+         forcerange="0 2e-5"
+         ctrllimited="true" ctrlrange="0 2e-5"/>
+    </actuator>
+
+    <!-- <equality> -->
+        <!-- <joint name="hopper-spring" joint="hopper-slide" stiffness="70"/> -->
+    <!-- </equality> -->
+</mujoco> -->
