@@ -47,6 +47,8 @@ def parse_args():
     # Paths
     p.add_argument("--data-dir", default="/Users/cassandrahe/MIT Dropbox/Cassandra He/jumping_data",
                    help="Directory containing .mat hardware data files")
+    p.add_argument("--sim-data", default=None,
+                   help="Optional .npz with additional X/Y from sim rollouts")
     p.add_argument("--run-name", default="hopping_v1",
                    help="Name for this run — used as filename stem for outputs")
     p.add_argument("--weights-dir", default="experiments/weights",
@@ -132,7 +134,21 @@ def main():
 
     X = all_data.X.astype(np.float32)
     Y = all_data.Y.astype(np.float32)
-    print(f"Loaded {len(X)} samples  |  X: {X.shape}  Y: {Y.shape}\n")
+    print(f"Loaded {len(X)} hardware samples  |  X: {X.shape}  Y: {Y.shape}")
+
+    X_sim = Y_sim = None
+    if args.sim_data:
+        sim = np.load(args.sim_data)
+        X_sim = sim["X"].astype(np.float32)
+        Y_sim = sim["Y"].astype(np.float32)
+        if X_sim.shape[1] != X.shape[1] or Y_sim.shape[1] != Y.shape[1]:
+            raise ValueError(
+                f"Sim shape mismatch: hardware X {X.shape} Y {Y.shape}, "
+                f"sim X {X_sim.shape} Y {Y_sim.shape}"
+            )
+        print(f"Loaded {len(X_sim)} sim samples  →  will augment train split only "
+              f"(val/test stay hardware-only for honest eval)")
+    print()
 
     if not args.no_plots:
         print_dataset_summary(X, Y)
@@ -148,6 +164,14 @@ def main():
     X_train, Y_train = X[:n_train],              Y[:n_train]
     X_val,   Y_val   = X[n_train:n_train+n_val], Y[n_train:n_train+n_val]
     X_test,  Y_test  = X[n_train+n_val:],        Y[n_train+n_val:]
+
+    if X_sim is not None:
+        # Sim augments train split only; shuffle sim so batches mix the two sources.
+        X_train = np.concatenate([X_train, X_sim], axis=0)
+        Y_train = np.concatenate([Y_train, Y_sim], axis=0)
+        rng_mix = np.random.default_rng(args.seed)
+        perm = rng_mix.permutation(len(X_train))
+        X_train = X_train[perm]; Y_train = Y_train[perm]
 
     print(f"Split  →  train: {len(X_train)}  val: {len(X_val)}  test: {len(X_test)}")
 
@@ -195,7 +219,6 @@ def main():
         optimizer, mode="min",
         patience=args.lr_patience,
         factor=args.lr_factor,
-        verbose=True,
     )
 
     # ------------------------------------------------------------------ #
