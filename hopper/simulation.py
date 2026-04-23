@@ -211,7 +211,7 @@ def run_simulation(
 
         if use_frame_realignment:
             # Get body rotation matrix
-            R_body = get_body_rotation_matrix(mjdata, bid)
+            R_body = get_body_rotation_matrix(mjmodel, mjdata, body_name=body_name)
 
             # Build alignment matrix (aligns body frame to NN frame)
             R_match = build_R_match(R_body, R_mpc_ref)
