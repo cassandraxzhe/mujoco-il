@@ -155,7 +155,7 @@ def load_jumping_data(data_dir: str, downsample_factor: int = 5,
         all_data: JumpingData object with concatenated data from all files
     """
     data_dir = Path(data_dir)
-    mat_files = sorted(data_dir.glob("*.mat"))
+    mat_files = sorted(data_dir.rglob("*.mat"))
 
     if not mat_files:
         raise ValueError(f"No .mat files found in {data_dir}")
