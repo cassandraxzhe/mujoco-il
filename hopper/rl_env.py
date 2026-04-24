@@ -86,6 +86,15 @@ class HopperEnvConfig:
     z_init_lo: float = 0.035
     z_init_hi: float = 0.035
 
+    # Domain randomisation (applied at reset for sim-to-real robustness).
+    #   dr_damping_range: multiplicative scaling of the leg-contact damping
+    #     component of solref (solref[1], which is negative → magnitude).
+    #   dr_wing_gain_range: multiplicative scaling of each wing actuator's
+    #     gear value (equivalent to scaling thrust per unit ctrl).
+    # Both are uniform samples in [lo, hi]; set both bounds to 1.0 to disable.
+    dr_damping_range: tuple = (1.0, 1.0)
+    dr_wing_gain_range: tuple = (1.0, 1.0)
+
 
 def _mix_wings(F, Tx, Ty, L, fmax):
     """Analytical mixer identical to hopper.sim_data_collection.mix_controls."""
@@ -123,6 +132,16 @@ class HopperEnv(gym.Env):
             for n in ("f1", "f2", "f3", "f4")
         ]
 
+        # Cache nominal DR targets so we can re-seed from nominal at each reset.
+        self._leg_geom_id = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_GEOM, "leg",
+        )
+        if self._leg_geom_id >= 0:
+            self._leg_solref_nominal = self.model.geom_solref[self._leg_geom_id].copy()
+        else:
+            self._leg_solref_nominal = None
+        self._actuator_gear_nominal = self.model.actuator_gear[self._actuator_ids].copy()
+
         # Control cadence
         self._dt_ctrl = 1.0 / self.cfg.fps_ctrl
         self._substeps = max(1, int(round(self._dt_ctrl / self.model.opt.timestep)))
@@ -156,6 +175,24 @@ class HopperEnv(gym.Env):
             self._rng = np.random.default_rng(seed)
 
         mujoco.mj_resetData(self.model, self.data)
+
+        # Domain randomisation of physical parameters — applied ONLY if the
+        # range bounds aren't both 1.0 (i.e., DR explicitly enabled).
+        if self._leg_solref_nominal is not None:
+            lo, hi = self.cfg.dr_damping_range
+            if lo != 1.0 or hi != 1.0:
+                scale = float(self._rng.uniform(lo, hi))
+                # Leg contact solref = [stiffness, damping] in negative form
+                # (both values stored as negatives). Scale the damping term.
+                self.model.geom_solref[self._leg_geom_id] = (
+                    self._leg_solref_nominal * np.array([1.0, scale], dtype=np.float64)
+                )
+        lo, hi = self.cfg.dr_wing_gain_range
+        if lo != 1.0 or hi != 1.0:
+            scale = float(self._rng.uniform(lo, hi))
+            self.model.actuator_gear[self._actuator_ids] = (
+                self._actuator_gear_nominal * scale
+            )
 
         # Randomise initial pose (mild, matches collect_il_demos defaults).
         x0 = self._rng.uniform(-self.cfg.xy_range_init, self.cfg.xy_range_init)
