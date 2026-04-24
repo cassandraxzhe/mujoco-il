@@ -71,3 +71,83 @@ and the hopper start position indicator. Use in methods section.
 25 mm), plotted as max forward x reached. Tests the narrow "one step"
 task rather than the full flight. Expert reaches 100 cm at h = 8 mm;
 all controllers fail at h ≥ 20 mm (step taller than foot clearance).
+
+### Dynamics-model figures (NN-MPC path)
+
+**dyn_training_curves.pdf** — Per-epoch train/val MSE for the HopperMLP
+dynamics model across four data configurations (7cm only, 3-setpoint
+hardware, + sim_v1, + sim_combined). Shows that hardware-only data
+produces overfitting (val ≫ train), and sim augmentation both lowers
+val loss and closes the train–val gap.
+Run artefacts: `experiments/weights/hopping_curves_*.pt/_norm.npz/_curves.npz`.
+
+**rollout_prediction.pdf** — Teacher-forced vs autonomous rollout
+prediction of the `hopping_curves_simaug_v2` dynamics model on the
+last 20 % (test) of the hardware data. Teacher-forced (dashed blue)
+tracks ground truth (solid black) closely for 80 steps; autonomous
+(dotted red) diverges exponentially around step 40. This is the
+single-figure argument for why NN+CEM MPC is fragile — compounding
+one-step prediction error destroys long-horizon plans.
+
+**mpc_failure_modes.pdf** — Closed-loop CEM+NN MPC with four trained
+dynamics models on flat ground. z vs time in panel (a), total thrust
+in panel (b). Better data → less extreme apex overshoot, but no
+configuration produces sustained hopping. Demonstrates that dynamics-
+model quality alone doesn't fix the CEM planner.
+
+*Dependencies: uses `assets/hopper_prefix.xml` because all four
+dynamics models were trained on the pre-physics-fix XML. Averages
+5 CEM seeds so the shaded band is Gaussian 1σ; individual single-seed
+runs may differ by 2–3 σ from the mean, which is why specific
+single-seed rows in progress.md §3.3 (e.g. hopping_simaug_v2 "stays
+put" at z ≈ 0.97 cm) don't land exactly on the seed-averaged peak in
+this figure. The conclusion is seed-robust: no configuration produces
+sustained hopping.*
+
+### IL-policy figures
+
+**il_v1_v2_drift.pdf** — Top-down xy trajectory (panel a) and altitude
+tracking (panel b) for `il_v1` (7-dim state, no x/y) vs `il_v2`
+(11-dim state with x/y). v1 drifts 20.5 cm in 3 s; v2 drifts 1.4 cm;
+both track z_des=8 cm cleanly. Numbers match progress.md §6 table.
+Justifies the decision in §6.3 to include x, y in the IL state.
+
+*Note: both policies were trained on the pre-physics-fix hopper.xml.
+This figure evaluates them on the matching `assets/hopper_prefix.xml`
+(slider unlimited, contact damping −0.01) so the numbers reproduce
+the original §6 measurements. Running these policies on the current
+(post-fix) XML would measure transfer to different physics and give
+different numbers.*
+
+### Stretch experiments
+
+**ilinit_vs_random.pdf** — Three-way PPO comparison (all 1 M steps,
+128², flat + stair mix): random-init (`ppo_mix_v1`), naive IL-init
+(`ppo_mix_ilinit_v1`, MLP weight transfer only), and KL-regularised
+IL-init (`ppo_mix_ilkl_v1`, weight transfer + DAPG-style BC auxiliary
+loss). Top row is learning curves from tensorboard; bottom is max
+forward distance across the 4 standard scenarios. Story:
+naive IL-init *regresses* on stair tasks (single step 5.3 cm,
+3-step flight 5.6 cm vs random-init's 11.4 / 11.9 cm) — adding the
+BC loss fully recovers stair crossing (12.5 / 21.3 cm, the flight
+value matching IL expert at 22.0 cm). Section §43–§44 of progress.md.
+
+### Robustness / sim-to-real
+
+**dr_sweep.pdf** — 7×7 perturbation grid (contact damping × wing gain)
+evaluated on the 3-step flight for two policies: `ppo_mix_v1`
+(trained on nominal physics) and `ppo_mix_dr_v1` (trained with domain
+randomisation: damping ±30 %, wing gain ±20 %, tilt ±3°, xy ±1 cm).
+Left + middle heatmaps share colour scale; right panel aggregates
+over wing gain. DR trades worst-case recoveries (under-damped
+regimes) for slightly worse best-case performance — same 77 %
+overall cross rate but +2.6 cm mean forward reach.
+
+### Expert-controller figures
+
+**expert_thrust_profiles.pdf** — Two hopping experts side-by-side on
+identical initial conditions. Panel (a) is z vs time (both track
+z_des=8 cm), (b) is total thrust (both saturate but at different
+rates), (c)/(d) zoom on a single hop to make the control-style
+difference visible — bang-bang has step transitions, energy shaping
+has continuous ramps on the pre-saturation envelope.
