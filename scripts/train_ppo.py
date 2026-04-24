@@ -53,6 +53,13 @@ def parse_args():
     p.add_argument("--vx-des-lo", type=float, default=0.0)
     p.add_argument("--vx-des-hi", type=float, default=0.05)
     p.add_argument("--episode-sec", type=float, default=5.0)
+    # Domain randomisation
+    p.add_argument("--dr-damping-lo", type=float, default=1.0)
+    p.add_argument("--dr-damping-hi", type=float, default=1.0)
+    p.add_argument("--dr-wing-gain-lo", type=float, default=1.0)
+    p.add_argument("--dr-wing-gain-hi", type=float, default=1.0)
+    p.add_argument("--dr-tilt-deg", type=float, default=0.0)
+    p.add_argument("--dr-xy-range", type=float, default=0.0)
     return p.parse_args()
 
 
@@ -72,6 +79,10 @@ def make_env_factory(args, rank):
             z_des_range=(args.z_des_lo, args.z_des_hi),
             vx_des_range=(args.vx_des_lo, args.vx_des_hi),
             randomize_task=True,
+            dr_damping_range=(args.dr_damping_lo, args.dr_damping_hi),
+            dr_wing_gain_range=(args.dr_wing_gain_lo, args.dr_wing_gain_hi),
+            tilt_deg_init=args.dr_tilt_deg,
+            xy_range_init=args.dr_xy_range,
         )
         env = HopperEnv(cfg)
         env = Monitor(env)

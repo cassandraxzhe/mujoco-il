@@ -264,8 +264,17 @@ def main():
             print(f"Epoch {epoch+1:4d}/{args.epochs}  "
                   f"train={epoch_train:.6f}  val={epoch_val:.6f}")
 
+    # Save per-epoch curves alongside weights so they can be re-plotted later
+    # (the thesis-figure pipeline expects `<run>_curves.npz`).
+    curves_path = os.path.join(args.weights_dir, f"{args.run_name}_curves.npz")
+    np.savez(curves_path,
+             train_losses=np.array(train_losses, dtype=np.float32),
+             val_losses=np.array(val_losses, dtype=np.float32),
+             best_val=best_val)
+
     print(f"\n✓ Training complete  |  best val loss: {best_val:.6f}")
     print(f"✓ Weights saved → {weights_path}")
+    print(f"✓ Curves saved  → {curves_path}")
 
     # ------------------------------------------------------------------ #
     # 7. Evaluation
