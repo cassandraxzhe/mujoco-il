@@ -1,330 +1,445 @@
-# Hopper Imitation Learning
-
-Model Predictive Control (MPC) for a micro-scale flying insect-inspired hopper robot using imitation learning and learned dynamics.
-
-## 🦗 Overview
-
-This project implements an end-to-end pipeline for controlling a micro-robotic hopper:
-
-1. **Data Collection**: Load experimental jumping data from real hardware
-2. **Learning**: Train a neural network to learn forward dynamics
-3. **Control**: Use Model Predictive Control (MPC) with Cross-Entropy Method (CEM) optimization
-4. **Simulation**: Closed-loop control in MuJoCo with visualization
-
-### The Hopper Robot
-
-- **Mass**: ~1 mg (0.95 mg body + 0.20 mg leg)
-- **Size**: 50mm × 50mm × 20mm
-- **Actuators**: 4 wing thrusts + 1 spring leg
-- **Control**: 80 Hz
-
-## 🚀 Quick Start
-
-### Installation
-
-```bash
-# Install dependencies
-pip install numpy torch scipy mujoco matplotlib imageio
-
-# Clone/navigate to project
-cd mujoco-il
-```
-
-### Run Simulation
-
-```python
-from hopper import run_simulation
-
-# Run closed-loop MPC simulation
-results = run_simulation(
-    hopper_xml="flying_hopper.xml",
-    model_weights="hopper_mlp.pt",
-    sim_time=5.0,
-    z_des=0.08,  # Target height: 8 cm
-    output_video="hopper_sim.mp4",
-    plot=True
-)
-```
-
-### Train Model
-
-```python
-from hopper import load_jumping_data, HopperMLP
-import torch
-
-# Load data
-data = load_jumping_data("/path/to/jumping_data")
-X, Y = data.X, data.Y
-
-# Create and train model
-model = HopperMLP(input_dim=14, output_dim=6, hidden_dim=32)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-
-# Training loop
-for epoch in range(50):
-    # ... training code ...
-    pass
-
-# Save model
-torch.save(model.state_dict(), "hopper_mlp.pt")
-```
-
-## 📁 Project Structure
-
-```
-mujoco-il/
-├── hopper/                    # Core library
-│   ├── data_utils.py         # Data loading & preprocessing
-│   ├── models.py             # Neural network (HopperMLP)
-│   ├── mpc.py                # MPC & CEM optimization
-│   ├── simulation.py         # MuJoCo simulation
-│   ├── frame_alignment.py    # Frame transformations
-│   └── evaluation.py         # Plotting & metrics
-│
-├── configs/
-│   └── mpc_config.py         # MPC hyperparameters & presets
-│
-├── hopper-il.ipynb           # Original research notebook
-├── hopper.xml                # MuJoCo model files
-├── flying_hopper.xml
-└── README.md                 # This file
-```
-
-## 🎛️ Configuration Presets
-
-Three pre-configured modes for different behaviors:
-
-### 1. Hopping Mode (Recommended)
-```python
-from configs.mpc_config import HoppingConfig
-
-cfg = HoppingConfig()
-# z_des = 0.08m (8 cm)
-# Balanced weights for sustained hopping
-```
-
-### 2. High Jump Mode
-```python
-from configs.mpc_config import HighJumpConfig
-
-cfg = HighJumpConfig()
-# z_des = 0.20m (20 cm)
-# Higher force limits and tracking weight
-```
-
-### 3. Conservative Mode
-```python
-from configs.mpc_config import ConservativeConfig
-
-cfg = ConservativeConfig()
-# z_des = 0.05m (5 cm)
-# Maximum stability, minimal drift
-```
-
-## 🔧 Key Components
-
-### 1. Data Loading
-
-```python
-from hopper import load_jumping_data
-
-data = load_jumping_data(
-    data_dir="/path/to/data",
-    downsample_factor=5,      # 500 Hz → 100 Hz
-    clip_start_sec=3.0,       # Remove initial transient
-    clip_end_sec=13.0         # Remove final transient
-)
-
-# Access preprocessed data
-X = data.X  # [N, 14]: [pos(3), eul(3), thrust(1), torque(3), signals(4)]
-Y = data.Y  # [N, 6]: [delta_pos(3), delta_eul(3)]
-```
-
-### 2. Neural Network
-
-```python
-from hopper import HopperMLP
-
-model = HopperMLP(
-    input_dim=14,    # State + action
-    output_dim=6,    # State change (delta)
-    hidden_dim=32    # Hidden layer size
-)
-
-# Forward dynamics: delta = f(state, action)
-delta = model(x)
-next_state = current_state + delta
-```
-
-### 3. MPC with CEM
-
-```python
-from hopper import cem_optimize
-
-# Optimize control sequence
-u_optimal = cem_optimize(
-    model,                 # Learned dynamics
-    pos,                   # Current position [3]
-    eul,                   # Current orientation [3]
-    z_des=0.08,           # Desired height
-    h=20,                  # Horizon (20 steps @ 80 Hz)
-    pop=256,               # CEM population
-    elites=32,             # CEM elites
-    iters=4                # CEM iterations
-)
-```
-
-### 4. Cost Function
-
-The MPC cost function balances:
-
-- **Attitude stability**: Minimize roll/pitch (stay upright)
-- **Height tracking**: Track desired height z_des
-- **Lateral drift**: Minimize x/y deviation
-- **Control effort**: Minimize force usage
-- **Angular velocity**: Dampen rotation
-
-```python
-from hopper import mpc_cost
-
-cost = mpc_cost(
-    traj_pos,     # Position trajectory [H, 3]
-    traj_eul,     # Euler trajectory [H, 3]
-    traj_u,       # Control trajectory [H, 4]
-    z_des=0.08,   # Target height
-    w_up=6.0,     # Attitude weight
-    w_z=5.0,      # Height weight
-    w_xy=2.0,     # Lateral weight
-    w_u=2e-4,     # Control effort weight
-    w_omega=2.0   # Angular velocity weight
-)
-```
-
-## 🐛 Known Issues & Fixes
-
-### Flying Hopper Bug
-
-**Problem**: Hopper flies upward and off-screen instead of sustained hopping.
-
-**Root Causes**:
-1. `z_des = 0.20m` too high (20 cm)
-2. Excessive hover bias added to CEM outputs
-3. Force scale mismatch (CEM range 141× smaller than actual forces)
-
-**Solution**:
-```python
-# Use HoppingConfig preset
-from configs.mpc_config import HoppingConfig
-
-cfg = HoppingConfig()
-results = run_simulation(
-    ...,
-    z_des=cfg.Z_DES  # 0.08m instead of 0.20m
-)
-```
-
-See [HOPPER_FIX_INSTRUCTIONS.md](HOPPER_FIX_INSTRUCTIONS.md) for details.
-
-## 📊 Evaluation & Plotting
-
-```python
-from hopper import (
-    evaluate_rollout,
-    plot_training_history,
-    plot_rollout_predictions,
-    print_dataset_summary
-)
-
-# Dataset statistics
-print_dataset_summary(X, Y)
-
-# Training curves
-plot_training_history(train_losses, val_losses)
-
-# Model rollout evaluation
-rollout_results = evaluate_rollout(model, X_test, Y_test, horizon=50)
-plot_rollout_predictions(rollout_results)
-
-# Control analysis
-from hopper.evaluation import plot_control_forces
-plot_control_forces(results['controls'])
-```
-
-## 🔬 Advanced: Frame Realignment
-
-For orientation-robust control:
-
-```python
-from hopper.frame_alignment import (
-    build_R_match,
-    body_to_nn,
-    tau_nn_to_body,
-    allocate_per_wing_forces
-)
-
-# Build alignment matrix
-R_match = build_R_match(R_body, R_mpc_1)
-
-# Transform to NN frame
-q_nn, omega_nn = body_to_nn(R_body, omega_body, R_match)
-
-# Transform torque back to body frame
-tau_body = tau_nn_to_body(tau_nn, R_match)
-
-# Allocate per-wing forces
-f_wings = allocate_per_wing_forces(F_cmd, Tx_cmd, Ty_cmd)
-```
-
-## 📖 Documentation
-
-- **[REFACTORING_GUIDE.md](REFACTORING_GUIDE.md)**: Migrate from old notebook to new modular code
-- **[HOPPER_FIX_INSTRUCTIONS.md](HOPPER_FIX_INSTRUCTIONS.md)**: Fix the flying hopper bug
-- **[hopper_mpc_fixed.py](hopper_mpc_fixed.py)**: Fixed MPC implementation with ground detection
-
-## 🧪 Testing
-
-```python
-# Quick sanity check
-from hopper import *
-from configs.mpc_config import print_config
-
-# Show configuration
-print_config('hopping')
-
-# Load model
-model = HopperMLP(14, 6)
-model.load_state_dict(torch.load("hopper_mlp.pt"))
-
-# Test MPC step
-u = cem_optimize(model, pos=[0,0,0.05], eul=[0,0,0])
-print(f"Control output: {u}")
-```
-
-## 📚 References
-
-This implements model-based imitation learning with MPC:
-
-1. **Imitation Learning**: Learn dynamics from expert demonstrations (real hardware data)
-2. **Model Predictive Control**: Optimize action sequences using learned model
-3. **Cross-Entropy Method**: Derivative-free optimization for MPC
-
-Key algorithms:
-- Neural network: MLP with 2 hidden layers (32 units each)
-- Dynamics: Forward model predicts state changes
-- Optimization: CEM with population 256, elites 32, 4 iterations
-- Cost: Multi-objective (attitude, height, drift, effort, velocity)
-
-## 🤝 Contributing
-
-The modular structure makes it easy to extend:
-
-- **New cost functions**: Add to `hopper/mpc.py`
-- **New controllers**: Add to `hopper/simulation.py`
-- **New models**: Add to `hopper/models.py`
-- **New presets**: Add to `configs/mpc_config.py`
+# Learning-based control for an insect-scale hopping micro-robot
+
+Supporting code for the MEng thesis
+**"Learning-based control for a hybrid quadcopter-hopper micro-robot"**
+(Cassandra He, MIT, 2026).
+
+This repository contains the MuJoCo models, controllers, training code,
+and evaluation pipeline used to benchmark model-based, imitation, and
+reinforcement-learning approaches to reliable stair ascent for an
+insect-scale (≈1 mg) robot equipped with a single spring leg and four
+flapping wings. All experiments are conducted in simulation. The thesis
+proposal is included at [docs/thesis_proposal.pdf](docs/thesis_proposal.pdf).
 
 ---
 
-**Status**: ✅ Refactored, Documented, Bug-Fixed
+## 1  Research context
 
-**Last Updated**: 2025-01-07
+The hopper is an insect-scale hybrid aerial–legged platform: four
+flapping wings provide attitude stabilisation and lateral trajectory
+control, while a passive spring leg generates impulsive vertical
+hops. The wings alone cannot sustain flight — their total peak thrust
+(≈ 12 mN) is only marginally above the hover threshold (≈ 9.6 mN) — so
+locomotion relies on well-timed interplay between the leg's stored
+spring energy and wing-generated forces and torques. The prototype
+target task is reliable traversal of an ascending staircase.
+
+This codebase benchmarks three families of controller on a shared
+simulation testbed:
+
+- **Model-based** — a learned dynamics MLP combined with cross-entropy
+  method (CEM) model-predictive control.
+- **Imitation learning (IL)** — policies cloned from analytic expert
+  controllers (cascaded PD, bang-bang FSM, and energy-shaping), with
+  iterative dataset aggregation (DAgger).
+- **Deep reinforcement learning (PPO)**, including ablations over
+  training-environment mix, domain randomisation, and three
+  imitation-learning warm-start variants (none / naive weight transfer /
+  DAPG-style behaviour-cloning auxiliary loss).
+
+A common 11-dimensional translation-invariant observation and a common
+3-dimensional `(F, T_x, T_y)` action space are used across IL and PPO,
+so the methods can be compared apples-to-apples on identical scenarios.
+
+---
+
+## 2  Platform
+
+- **Mass:** 0.95 mg torso + 0.03 mg leg (≈ 0.98 mg total)
+- **Leg:** passive spring–damper prismatic joint, travel −3 cm to 0
+- **Wings:** four actuators, 3 mN each (12 mN total)
+- **Control rate:** 100 Hz (matched to hardware data)
+
+### Wing layout (see `assets/hopper.xml`)
+
+```
+  (+x)
+   |
+f1=(+L,+L)   f2=(+L,-L)
+      \       /
+       torso          (+y) ←
+      /       \
+f3=(-L,+L)   f4=(-L,-L)
+```
+
+with moment arm *L* = 15 mm. Body-frame torques:
+
+```
+T_x =  L · ( f1 − f2 + f3 − f4)
+T_y =  L · (−f1 − f2 + f3 + f4)
+T_z =  0  (symmetric layout)
+```
+
+---
+
+## 3  Methods
+
+### 3.1  Learned dynamics + CEM–MPC
+
+A 14-input / 6-output MLP (`hopper.models.HopperMLP`) predicts
+one-step state deltas from `(pos, eul, F, T_x, T_y, T_z, f_1..f_4)`.
+Training data come from hardware jumping experiments, optionally
+augmented with simulated rollouts under a cascaded PD controller.
+CEM optimisation (`hopper.mpc.cem_optimize`) produces per-wing
+forces at runtime. This pipeline reproduces the results in §3 of the
+thesis but is brittle in closed-loop — see §3.3 of progress.md for
+the failure-mode analysis.
+
+### 3.2  Imitation learning
+
+Two policy architectures are implemented in
+[hopper/il_policy.py](hopper/il_policy.py):
+
+- **`ILPolicy`** (11 → 64 → 64 → 4 + sigmoid-gated wing forces). Good
+  for smooth hover experts; breaks physical symmetry when cloning more
+  dynamic experts.
+- **`ILPolicyFTxTy`** (11 → 64 → 64 → 3 followed by an analytical
+  force-to-wing mixer). The mixer enforces the null-space constraint
+  `f1 − f2 − f3 + f4 = 0` by construction, which is necessary to
+  clone the energy-shaping hopping expert. This architecture is used
+  for all headline IL results.
+
+Demonstrations are generated by three analytical experts in
+[hopper/sim_data_collection.py](hopper/sim_data_collection.py)
+(cascaded PD hover, bang-bang FSM hop, and memoryless energy-shaping
+hop), iteratively refined through a DAgger loop
+([scripts/dagger_iterate.py](scripts/dagger_iterate.py)).
+
+### 3.3  Proximal policy optimisation (PPO)
+
+A Gymnasium environment
+([hopper/rl_env.py](hopper/rl_env.py)) wraps MuJoCo with the same
+11-dim observation and 3-dim action used by IL. Standard PPO is
+implemented via Stable-Baselines3. Variants:
+
+| Run              | Training environment        | Warm start                   |
+|------------------|-----------------------------|------------------------------|
+| `ppo_v2`         | flat only                   | random                       |
+| `ppo_stair_v1`   | 3-step flight only          | random                       |
+| `ppo_mix_v1`     | flat + 3-step flight        | random                       |
+| `ppo_mix_dr_v1`  | flat + flight + DR          | random                       |
+| `ppo_mix_ilinit_v1` | flat + flight            | IL MLP weight transfer       |
+| `ppo_mix_ilkl_v1`| flat + flight               | IL weight transfer + BC loss |
+
+The domain-randomisation (DR) variant perturbs contact damping
+(±30 %), wing gain (±20 %), initial tilt (±3°), and initial xy
+position (±1 cm) across parallel environments.
+
+The IL-initialised variants are described next.
+
+### 3.4  Imitation-initialised PPO
+
+Two warm-start strategies are compared against random-init PPO on
+identical PPO hyperparameters (1 M environment steps, 128² MLP, mixed
+flat+stair training):
+
+- **Naive weight transfer** (`ppo_mix_ilinit_v1`,
+  [scripts/train_ppo_ilinit.py](scripts/train_ppo_ilinit.py)).
+  IL's two Linear layers are copied into PPO's
+  `mlp_extractor.policy_net`; VecNormalize's observation statistics are
+  seeded with IL's training-time normalisation. The output head and
+  value function are left random.
+- **Weight transfer + behaviour-cloning auxiliary loss** — DAPG-style
+  (`ppo_mix_ilkl_v1`,
+  [scripts/train_ppo_ilkl.py](scripts/train_ppo_ilkl.py)). Identical
+  warm-start, but the per-mini-batch loss is augmented with
+
+  ```
+  L_total = L_policy + c_ent · L_entropy + c_vf · L_value
+          + c_bc · || π_mean(s) − a_IL(s) ||²
+  ```
+
+  evaluated on the states actually visited by PPO. This keeps the
+  policy mean near IL throughout training rather than only at step 0.
+
+The two warm-starts produce qualitatively different final policies —
+see §5.
+
+---
+
+## 4  Repository layout
+
+```
+hopper/                 Core library (no CLI scripts)
+  models.py             HopperMLP dynamics model (14→6)
+  mpc.py                CEM optimiser, cost function
+  simulation.py         MuJoCo sim loop, logging, rendering
+  frame_alignment.py    Orientation-invariant frame tools
+  data_utils.py         Hardware .mat loader, X/Y packing
+  evaluation.py         Rollout metrics and plotting
+  sim_data_collection.py  Analytical expert controllers
+  il_policy.py          ILPolicy, ILPolicyFTxTy, state extractor
+  environments.py       Parametric stair-XML generators
+  rl_env.py             Gymnasium wrapper for PPO
+
+configs/
+  mpc_config.py         MPC parameter presets
+
+assets/
+  hopper.xml            Physics-fixed base model (use for all current work)
+  hopper_prefix.xml     Pre-physics-fix model (retained for legacy figures)
+  hopper_stair_h8_d20.xml          Generated 8 mm × 20 mm single step
+  hopper_stair_flight_3x8mm.xml    Generated 3 × 8 mm flight
+
+scripts/
+  train.py                 Dynamics-MLP training (supports sim augmentation)
+  simulate.py              NN + CEM-MPC closed loop (brittle; see §3)
+  collect_sim_data.py      PD rollouts → dynamics training data
+  collect_il_demos.py      Expert rollouts → (s, a) IL demos
+  train_il.py              ILPolicy / ILPolicyFTxTy training
+  simulate_il.py           Closed-loop IL simulation
+  dagger_iterate.py        One DAgger round
+  train_ppo.py             Baseline PPO (Stable-Baselines3)
+  train_ppo_ilinit.py      IL warm-start, no BC loss
+  train_ppo_ilkl.py        IL warm-start + DAPG-style BC loss
+  simulate_ppo.py          Closed-loop PPO simulation
+  compare_controllers.py   Scenario battery: expert / IL / PPO
+  eval_dr_sweep.py         7×7 (damping, gain) perturbation grid
+  make_figures.py          Regenerates all thesis figures
+
+experiments/                        (git-ignored; generated artefacts)
+  weights/                          IL policies + dynamics MLPs (.pt + _norm.npz)
+  ppo/<run>/                        PPO artefacts per run
+  figures/                          Thesis figures (PDF + PNG)
+
+tests/
+  sanity_physics.py                 Physics regressions (forcerange, rotation)
+
+data/                               (git-ignored) dynamics + IL datasets
+
+docs/
+  thesis_proposal.pdf
+
+legacy/                             Superseded files (do not import)
+
+progress.md                         Full experiment log (Parts I–VI)
+CLAUDE.md                           Developer brief (current state, conventions)
+```
+
+A full, dated experiment log — including negative results, failed
+hyperparameter sweeps, and the physics bugs surfaced along the way —
+lives in [progress.md](progress.md).
+
+---
+
+## 5  Headline results
+
+### 5.1  Expert controllers (oracles)
+
+- Cascaded PD hover — RMSE 0.66 cm at z\_des = 8 cm with zero drift
+  over 5 s.
+- Memoryless energy-shaping hop — 21 clean apexes in 5 s at ≈ 4 Hz,
+  apex 8.17 ± 0.06 cm, zero drift.
+
+### 5.2  Head-to-head on the standard scenario battery
+
+Maximum forward distance reached in each scenario (higher is better;
+"✓" indicates crossing the 3-step flight at x ≈ 11 cm). All entries
+averaged over the standard seed.
+
+| Controller                     | Flat hover | Flat fwd | Single 8 mm step | 3-step flight |
+|--------------------------------|-----------:|---------:|-----------------:|--------------:|
+| Energy-shaping expert          |    0.0 cm  | 196.8 cm |  99.2 cm         | 20.7 cm ✓     |
+| IL (`il_energy_ftxty_fwd_dag2`)|    2.0 cm  |   5.4 cm |  77.7 cm         | 22.0 cm ✓     |
+| PPO random-init (`ppo_mix_v1`) |    3.4 cm  |  15.0 cm |  11.4 cm ✓       | 11.9 cm ✓     |
+| PPO naive IL-init (`ppo_mix_ilinit_v1`) | 3.6 cm | 13.3 cm | 5.3 cm ✗ | 5.6 cm ✗ |
+| **PPO IL-init + BC loss (`ppo_mix_ilkl_v1`)** | **7.5 cm** | **16.5 cm** | **12.5 cm ✓** | **21.3 cm ✓** |
+
+Interpretation:
+
+- **Naive weight transfer regresses stair performance.** Copying IL's
+  MLP into PPO's feature extractor converges to the same training-time
+  reward as random-init but drops the inherited aggressive stair
+  behaviour — a documented negative result (progress.md §43).
+- **DAPG-style BC auxiliary loss reverses the regression.** Adding an
+  explicit BC penalty during PPO training keeps the policy close to
+  IL, producing the first PPO variant in the thesis that reaches
+  IL-expert-level forward reach on the 3-step flight (21.3 cm vs IL's
+  22.0 cm). This is the strongest learning-based controller measured
+  (progress.md §44).
+- **Domain randomisation** trades worst-case under-damped recoveries
+  for slightly lower best-case performance: the same 77 % crossing
+  rate across a 7 × 7 perturbation grid as the nominally-trained
+  policy, but +2.6 cm mean forward reach and a flatter failure
+  envelope (progress.md §42).
+
+### 5.3  Model-based (CEM + NN dynamics) — brittle baseline
+
+Across four dynamics models trained on different data mixes, CEM-MPC
+closed-loop fails in three qualitatively distinct modes (never lifts
+off, overshoots and crashes, or stays put near the ground) even when
+one-step rollout MSE is as low as 0.008. This is attributed to
+compounding prediction error over long horizons and not to any single
+dynamics-model deficiency. See progress.md §3 for the full analysis;
+this is the open-loop problem that motivates the IL and PPO arms.
+
+---
+
+## 6  Installation
+
+Dependencies are managed via `conda`; the primary environment used for
+all published results is `mujoco_il`:
+
+```bash
+conda create -n mujoco_il python=3.11
+conda activate mujoco_il
+pip install numpy scipy matplotlib imageio torch \
+            mujoco gymnasium stable-baselines3 tensorboard
+```
+
+All scripts assume `PYTHONPATH=.` so that the local `hopper/` package
+resolves correctly:
+
+```bash
+export PYTHONPATH=.
+```
+
+---
+
+## 7  Reproducing the results
+
+### 7.1  Physics regression checks
+
+Before touching actuator or asset configuration, run:
+
+```bash
+python tests/sanity_physics.py
+```
+
+This verifies (i) that a zero-control drop bounces cleanly under the
+current contact-damping setting, and (ii) that equal 3 mN on all four
+wings lifts the torso. Both were broken before
+[assets/hopper.xml](assets/hopper.xml) was fixed in this thesis (see
+CLAUDE.md → "Recently fixed").
+
+### 7.2  Imitation learning pipeline
+
+```bash
+# Collect demonstrations from the energy-shaping expert
+# (forward-hopping setpoints, randomised initial conditions)
+python scripts/collect_il_demos.py --expert energy \
+    --vx-max 0.05 --out data/il_demos_fwd_v1.npz
+
+# Clone (11→128→128→3) with per-column-std-weighted MSE
+python scripts/train_il.py --demos data/il_demos_fwd_v1.npz \
+    --run-name il_energy_ftxty_fwd_v1 \
+    --policy ftxty --hidden-dim 128 --epochs 120
+
+# Iterate DAgger twice
+python scripts/dagger_iterate.py \
+    --policy-weights experiments/weights/il_energy_ftxty_fwd_v1.pt \
+    --out data/il_demos_fwd_dag1.npz
+python scripts/train_il.py --demos data/il_demos_fwd_dag1.npz \
+    --run-name il_energy_ftxty_fwd_dag1 --policy ftxty --hidden-dim 128
+# ...and again for dag2
+
+# Closed-loop evaluation on the 3-step flight
+python scripts/simulate_il.py \
+    --weights experiments/weights/il_energy_ftxty_fwd_dag2.pt \
+    --xml assets/hopper_stair_flight_3x8mm.xml \
+    --x0 -0.05 --vx-des 0.03 --sim-time 5.0
+```
+
+### 7.3  PPO training
+
+```bash
+# Baseline PPO on flat + stair mix, 1 M steps
+python scripts/train_ppo.py \
+    --xml assets/hopper.xml \
+    --xml-mix assets/hopper_stair_flight_3x8mm.xml \
+    --run-name ppo_mix_v1 --total-timesteps 1000000 --n-envs 8 \
+    --hidden-dim 128
+
+# Domain-randomised PPO
+python scripts/train_ppo.py \
+    --xml assets/hopper.xml \
+    --xml-mix assets/hopper_stair_flight_3x8mm.xml \
+    --run-name ppo_mix_dr_v1 --total-timesteps 1000000 --n-envs 8 \
+    --hidden-dim 128 \
+    --dr-damping-lo 0.7 --dr-damping-hi 1.3 \
+    --dr-wing-gain-lo 0.8 --dr-wing-gain-hi 1.2 \
+    --dr-tilt-deg 3.0 --dr-xy-range 0.01
+
+# IL-initialised PPO (naive)
+python scripts/train_ppo_ilinit.py \
+    --xml assets/hopper.xml \
+    --xml-mix assets/hopper_stair_flight_3x8mm.xml \
+    --run-name ppo_mix_ilinit_v1 --total-timesteps 1000000 --n-envs 8 \
+    --il-weights experiments/weights/il_energy_ftxty_fwd_dag2_h128.pt \
+    --il-hidden-dim 128
+
+# IL-initialised PPO with BC auxiliary loss (best-in-thesis on stairs)
+python scripts/train_ppo_ilkl.py \
+    --xml assets/hopper.xml \
+    --xml-mix assets/hopper_stair_flight_3x8mm.xml \
+    --run-name ppo_mix_ilkl_v1 --total-timesteps 1000000 --n-envs 8 \
+    --il-weights experiments/weights/il_energy_ftxty_fwd_dag2_h128.pt \
+    --il-hidden-dim 128 --bc-coef 1.0 --bc-decay 1.0
+```
+
+Each run writes `model.zip`, `vec_normalize.pkl`, a
+`tensorboard/` directory, and periodic checkpoints under
+`experiments/ppo/<run-name>/`.
+
+### 7.4  Head-to-head comparison
+
+```bash
+# Fixed scenario battery: flat hover, flat forward, single step, 3-step flight
+python scripts/compare_controllers.py \
+    --ppo-runs ppo_mix_v1 ppo_mix_ilinit_v1 ppo_mix_ilkl_v1
+```
+
+### 7.5  Thesis figures
+
+```bash
+# All figures (~15 min)
+python scripts/make_figures.py
+
+# Subset by key
+python scripts/make_figures.py a c j q
+```
+
+Outputs are written as paired `.pdf` / `.png` files to
+[experiments/figures/](experiments/figures/). The index (which figure
+corresponds to which key) is documented in
+[experiments/figures/README.md](experiments/figures/README.md).
+
+---
+
+## 8  Data and artefact availability
+
+- **Hardware jumping data** are not redistributed here; please contact
+  the author if access is required for replication.
+- **Simulated datasets** (`data/sim_*.npz`, `data/il_demos_*.npz`) are
+  regenerable from the scripts above and are not tracked in git.
+- **Trained weights** (dynamics MLPs, IL policies, PPO checkpoints)
+  live under `experiments/` and are also git-ignored; the principal
+  results can be reproduced from seed 42 using the commands in §7.
+
+---
+
+## 9  Related documentation
+
+- [progress.md](progress.md) — chronological experimental log with
+  numerical results, decision points, and negative findings.
+- [CLAUDE.md](CLAUDE.md) — developer-facing brief: physical model,
+  conventions, known issues, and a summary of the current state.
+- [docs/thesis_proposal.pdf](docs/thesis_proposal.pdf) — thesis
+  objectives, literature review, and planned methodology.
+
+---
+
+## 10  Citation
+
+If you reference this work, please cite the thesis:
+
+```
+@mastersthesis{He2026Hopper,
+  author  = {Cassandra He},
+  title   = {Learning-based control for a hybrid quadcopter-hopper
+             micro-robot},
+  school  = {Massachusetts Institute of Technology},
+  year    = {2026},
+  type    = {MEng thesis}
+}
+```
